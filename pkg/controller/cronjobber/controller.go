@@ -38,13 +38,13 @@ import (
 	"go.uber.org/zap"
 	"k8s.io/klog/v2"
 
+	"github.com/hiddeco/cronjobber/pkg/apis/cronjobber/v1alpha1"
 	cronjobberv1 "github.com/hiddeco/cronjobber/pkg/apis/cronjobber/v1alpha1"
 	cronjobberclientset "github.com/hiddeco/cronjobber/pkg/client/clientset/versioned"
 	cronjobberscheme "github.com/hiddeco/cronjobber/pkg/client/clientset/versioned/scheme"
 	cronjobberinformers "github.com/hiddeco/cronjobber/pkg/client/informers/externalversions/cronjobber/v1alpha1"
 	cronjobberlisters "github.com/hiddeco/cronjobber/pkg/client/listers/cronjobber/v1alpha1"
 	batchv1 "k8s.io/api/batch/v1"
-	batchv1beta1 "k8s.io/api/batch/v1beta1"
 	v1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/labels"
@@ -63,7 +63,7 @@ import (
 // Utilities for dealing with Jobs and TZCronJobs and time and timezones.
 
 // controllerKind contains the schema.GroupVersionKind for this controller type.
-var controllerKind = batchv1beta1.SchemeGroupVersion.WithKind("TZCronJob")
+var controllerKind = v1alpha1.SchemeGroupVersion.WithKind("TZCronJob")
 
 type TZCronJobController struct {
 	kubeClient      clientset.Interface
