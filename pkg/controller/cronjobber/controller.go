@@ -170,8 +170,9 @@ func cleanupFinishedJobs(ctx context.Context, sj *cronjobberv1.TZCronJob, js []b
 		}
 	}
 
+	jobsDeleted := 0
 	if sj.Spec.SuccessfulJobsHistoryLimit != nil {
-		removeOldestJobs(ctx, sj,
+		jobsDeleted += removeOldestJobs(ctx, sj,
 			succesfulJobs,
 			jc,
 			*sj.Spec.SuccessfulJobsHistoryLimit,
@@ -180,7 +181,7 @@ func cleanupFinishedJobs(ctx context.Context, sj *cronjobberv1.TZCronJob, js []b
 	}
 
 	if sj.Spec.FailedJobsHistoryLimit != nil {
-		removeOldestJobs(ctx, sj,
+		jobsDeleted += removeOldestJobs(ctx, sj,
 			failedJobs,
 			jc,
 			*sj.Spec.FailedJobsHistoryLimit,
@@ -189,18 +190,20 @@ func cleanupFinishedJobs(ctx context.Context, sj *cronjobberv1.TZCronJob, js []b
 	}
 
 	// Update the TZCronJob, in case jobs were removed from the list.
-	if _, err := sjc.UpdateStatus(ctx, sj); err != nil {
-		nameForLog := fmt.Sprintf("%s/%s", sj.Namespace, sj.Name)
-		logger.Infof("Unable to update status for %s (rv = %s): %v", nameForLog, sj.ResourceVersion, err)
+	if jobsDeleted > 0 {
+		if _, err := sjc.UpdateStatus(ctx, sj); err != nil {
+			nameForLog := fmt.Sprintf("%s/%s", sj.Namespace, sj.Name)
+			logger.Infof("Unable to update status for %s (rv = %s): %v", nameForLog, sj.ResourceVersion, err)
+		}
 	}
 }
 
 // removeOldestJobs removes the oldest jobs from a list of jobs
 func removeOldestJobs(ctx context.Context, sj *cronjobberv1.TZCronJob, js []batchv1.Job, jc jobControlInterface,
-	maxJobs int32, recorder record.EventRecorder, logger *zap.SugaredLogger) {
+	maxJobs int32, recorder record.EventRecorder, logger *zap.SugaredLogger) int {
 	numToDelete := len(js) - int(maxJobs)
 	if numToDelete <= 0 {
-		return
+		return 0
 	}
 
 	nameForLog := fmt.Sprintf("%s/%s", sj.Namespace, sj.Name)
@@ -211,6 +214,7 @@ func removeOldestJobs(ctx context.Context, sj *cronjobberv1.TZCronJob, js []batc
 		logger.Debugf("Removing job %s from %s", js[i].Name, nameForLog)
 		deleteJob(ctx, sj, &js[i], jc, recorder, logger)
 	}
+	return numToDelete
 }
 
 // syncOne reconciles a TZCronJob with a list of any Jobs that it created.
@@ -221,6 +225,7 @@ func syncOne(ctx context.Context, sj *cronjobberv1.TZCronJob, js []batchv1.Job, 
 	sjc sjControlInterface, recorder record.EventRecorder, logger *zap.SugaredLogger) {
 	nameForLog := fmt.Sprintf("%s/%s", sj.Namespace, sj.Name)
 
+	cronJobNeedsUpdate := false
 	childrenJobs := make(map[types.UID]bool)
 	for _, j := range js {
 		childrenJobs[j.ObjectMeta.UID] = true
@@ -241,6 +246,7 @@ func syncOne(ctx context.Context, sj *cronjobberv1.TZCronJob, js []batchv1.Job, 
 			deleteFromActiveList(sj, j.ObjectMeta.UID)
 			// TODO: event to call out failure vs success.
 			recorder.Eventf(sj, v1.EventTypeNormal, "SawCompletedJob", "Saw completed job: %v", j.Name)
+			cronJobNeedsUpdate = true
 		}
 	}
 
@@ -251,15 +257,18 @@ func syncOne(ctx context.Context, sj *cronjobberv1.TZCronJob, js []batchv1.Job, 
 		if found := childrenJobs[j.UID]; !found {
 			recorder.Eventf(sj, v1.EventTypeNormal, "MissingJob", "Active job went missing: %v", j.Name)
 			deleteFromActiveList(sj, j.UID)
+			cronJobNeedsUpdate = true
 		}
 	}
 
-	updatedSJ, err := sjc.UpdateStatus(ctx, sj)
-	if err != nil {
-		logger.Errorf("Unable to update status for %s (rv = %s): %v", nameForLog, sj.ResourceVersion, err)
-		return
+	if cronJobNeedsUpdate {
+		updatedSJ, err := sjc.UpdateStatus(ctx, sj)
+		if err != nil {
+			logger.Errorf("Unable to update status for %s (rv = %s): %v", nameForLog, sj.ResourceVersion, err)
+			return
+		}
+		*sj = *updatedSJ
 	}
-	*sj = *updatedSJ
 
 	if sj.DeletionTimestamp != nil {
 		// The TZCronJob is being deleted.
