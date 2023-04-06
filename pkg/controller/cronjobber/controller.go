@@ -372,10 +372,12 @@ func syncOne(ctx context.Context, sj *cronjobberv1.TZCronJob, js []batchv1.Job, 
 		sj.Status.Active = append(sj.Status.Active, *ref)
 	}
 	sj.Status.LastScheduleTime = &metav1.Time{Time: scheduledTime}
-	if _, err := sjc.UpdateStatus(ctx, sj); err != nil {
+	updatedSJ, err := sjc.UpdateStatus(ctx, sj)
+	if err != nil {
 		klog.Infof("Unable to update status for %s (rv = %s): %v", nameForLog, sj.ResourceVersion, err)
+		return
 	}
-
+	*sj = *updatedSJ
 	return
 }
 
