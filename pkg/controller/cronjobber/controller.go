@@ -145,8 +145,8 @@ func (jm *TZCronJobController) syncAll() {
 			jm.recorder.Eventf(sj, v1.EventTypeWarning, "InvalidTimeZone", "Attempted to run a job with an invalid time zone: %v. %v", sj.Spec.TimeZone, err)
 		}
 
-		syncOne(ctx, sj, jobsBySj[sj.UID], tzTime, jm.jobControl, jm.sjControl, jm.recorder, jm.logger)
-		cleanupFinishedJobs(ctx, sj, jobsBySj[sj.UID], jm.jobControl, jm.sjControl, jm.recorder, jm.logger)
+		sjUpdated := syncOne(ctx, sj, jobsBySj[sj.UID], tzTime, jm.jobControl, jm.sjControl, jm.recorder, jm.logger)
+		cleanupFinishedJobs(ctx, sjUpdated, jobsBySj[sj.UID], jm.jobControl, jm.sjControl, jm.recorder, jm.logger)
 	}
 }
 
@@ -222,7 +222,10 @@ func removeOldestJobs(ctx context.Context, sj *cronjobberv1.TZCronJob, js []batc
 // The current time is passed in to facilitate testing.
 // It has no receiver, to facilitate testing.
 func syncOne(ctx context.Context, sj *cronjobberv1.TZCronJob, js []batchv1.Job, now time.Time, jc jobControlInterface,
-	sjc sjControlInterface, recorder record.EventRecorder, logger *zap.SugaredLogger) {
+	sjc sjControlInterface, recorder record.EventRecorder, logger *zap.SugaredLogger) (sjUpdated *cronjobberv1.TZCronJob) {
+	defer func() {
+		sjUpdated = sj
+	}()
 	nameForLog := fmt.Sprintf("%s/%s", sj.Namespace, sj.Name)
 
 	cronJobNeedsUpdate := false
